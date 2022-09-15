@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"trading/pkg/interactor"
+	"trading/pkg/matcher"
+	"trading/pkg/order"
 )
 
 type HttpServer struct {
@@ -18,13 +19,20 @@ func (h *HttpServer) Serve() {
 
 func (h *HttpServer) OrderReqHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("OrderReqHandler")
-	var order interactor.Order
+	var newOrder order.Order
 	if r.Method == "POST" {
-		err := json.NewDecoder(r.Body).Decode(&order)
+		err := json.NewDecoder(r.Body).Decode(&newOrder)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		interactor.Match(order)
+		var newMatcher matcher.Matcher
+		switch newOrder.MatchRule {
+		case "partial":
+			newMatcher = &matcher.PartialMatcher{}
+			// case "full":
+			// 	matchRule.Match(order)
+		}
+		newMatcher.Match(newOrder)
 	}
 }
