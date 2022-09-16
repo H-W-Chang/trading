@@ -1,7 +1,6 @@
 package main
 
 import (
-	// "trading/pkg/Interactor"
 	"trading/pkg/server"
 )
 

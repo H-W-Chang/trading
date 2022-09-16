@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"trading/pkg/matcher"
-	"trading/pkg/order"
 )
 
 type HttpServer struct {
@@ -19,14 +18,14 @@ func (h *HttpServer) Serve() {
 
 func (h *HttpServer) OrderReqHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("OrderReqHandler")
-	var newOrder order.Order
+	var newOrder matcher.Order
 	if r.Method == "POST" {
 		err := json.NewDecoder(r.Body).Decode(&newOrder)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		var newMatcher matcher.Matcher = matcher.CreateMatcher(newOrder.MatchRule)
+		var newMatcher matcher.Matcher = CreateMatcher(newOrder.MatchRule)
 		newMatcher.Match(newOrder)
 	}
 }

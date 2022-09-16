@@ -1,19 +1,13 @@
 package matcher
 
-import (
-	"trading/pkg/database"
-	"trading/pkg/order"
-)
-
 type PartialMatcher struct {
+	Ol OrderList
 }
 
-func (p *PartialMatcher) Match(newOrder order.Order) {
-	db := database.GetDB()
+func (p *PartialMatcher) Match(newOrder Order) {
 	switch newOrder.Op {
 	case 0: //buy
-		err := db.BeginTx()
-		sol := db.FindSellOrderByPrice(newOrder.Price)
+		sol := p.Ol.FindByPrice(newOrder.Price)
 		tempOrder := newOrder
 		for _, so := range sol {
 			if tempOrder.Volume <= 0 {
@@ -21,29 +15,25 @@ func (p *PartialMatcher) Match(newOrder order.Order) {
 			}
 			if tempOrder.Volume >= so.Volume {
 				tempOrder.Volume -= so.Volume
-				err := db.DeleteSellOrder(so.OrderID)
+				err := p.Ol.DeleteOrder(so.OrderID)
 				if err != nil {
-					db.RollbackTx()
 					return
 				}
 			} else {
 				so.Volume -= tempOrder.Volume
 				tempOrder.Volume = 0
-				err := db.UpdateSellOrder(so)
+				err := p.Ol.UpdateOrder(so)
 				if err != nil {
-					db.RollbackTx()
 					return
 				}
 			}
 		}
 		if tempOrder.Volume > 0 {
-			err := db.AddBuyOrder(tempOrder)
+			err := p.Ol.AddOrder(tempOrder)
 			if err != nil {
-				db.RollbackTx()
 				return
 			}
 		}
-		db.CommitTx()
 	case 1: //sell
 	}
 
