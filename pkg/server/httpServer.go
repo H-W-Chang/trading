@@ -26,13 +26,7 @@ func (h *HttpServer) OrderReqHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		var newMatcher matcher.Matcher
-		switch newOrder.MatchRule {
-		case "partial":
-			newMatcher = &matcher.PartialMatcher{}
-			// case "full":
-			// 	matchRule.Match(order)
-		}
+		var newMatcher matcher.Matcher = matcher.CreateMatcher(newOrder.MatchRule)
 		newMatcher.Match(newOrder)
 	}
 }
