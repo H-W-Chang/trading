@@ -18,14 +18,24 @@ func (h *HttpServer) Serve() {
 
 func (h *HttpServer) OrderReqHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("OrderReqHandler")
-	var newOrder matcher.Order
 	if r.Method == "POST" {
+		var newOrder matcher.Order
 		err := json.NewDecoder(r.Body).Decode(&newOrder)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		var newMatcher matcher.Matcher = CreateMatcher(newOrder.MatchRule)
-		newMatcher.Match(newOrder)
+		err = newOrder.Validate()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var newMatcher matcher.Matcher = GetMatcher(newOrder.MatchRule)
+		result, err := newMatcher.Match(newOrder)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Write([]byte(result))
 	}
 }

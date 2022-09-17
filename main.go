@@ -1,10 +1,12 @@
 package main
 
 import (
+	"trading/pkg/database"
 	"trading/pkg/server"
 )
 
 func main() {
-	var server server.Server = &server.HttpServer{}
+	repo := database.NewRepository("memory")
+	server := server.NewServer("http", repo)
 	server.Serve()
 }

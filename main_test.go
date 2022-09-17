@@ -4,35 +4,55 @@ import (
 	"bytes"
 	"encoding/json"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 
+	"trading/pkg/database"
+	"trading/pkg/matcher"
+	"trading/pkg/server"
+
 	"github.com/google/uuid"
 )
 
+var testServer server.Server
+
 func TestMain(m *testing.M) {
-	BuyOrderList = make(map[float64]*OrderList)
-	SellOrderList = make(map[float64]*OrderList)
+	testServer = server.NewServer("http", &database.MemoryRepository{})
+	testServer.Serve()
 	os.Exit(m.Run())
 }
 
-func SendOrderPost(order Order) *httptest.ResponseRecorder {
+//	func SendOrderPost(order Order) *httptest.ResponseRecorder {
+//		id := uuid.New()
+//		order.OrderId = id.String()
+//		payloadBuf := new(bytes.Buffer)
+//		json.NewEncoder(payloadBuf).Encode(order)
+//		req := httptest.NewRequest(http.MethodPost, "/order", payloadBuf)
+//		w := httptest.NewRecorder()
+//		OrderPost(w, req)
+//		return w
+//	}
+func SendHttpRequest() {
 	id := uuid.New()
-	order.OrderId = id.String()
+	jsonOrder := matcher.JsonOrder{id.String(), "1", "gold", 0, 100, 100, "partial"}
 	payloadBuf := new(bytes.Buffer)
-	json.NewEncoder(payloadBuf).Encode(order)
+	json.NewEncoder(payloadBuf).Encode(jsonOrder)
 	req := httptest.NewRequest(http.MethodPost, "/order", payloadBuf)
 	w := httptest.NewRecorder()
 	OrderPost(w, req)
-	return w
+	res := w.Result()
+	defer res.Body.Close()
+	body, _ := ioutil.ReadAll(res.Body)
+	log.Println(string(body))
 }
 
-func TestAddOrder(t *testing.T) {
-	ol := OrderList{}
+func TestHttpAddOrder(t *testing.T) {
 	id := uuid.New()
-	ol.AddOrder(Order{id.String(), "1", "gold", 0, 100, 100})
+	jsonOrder := matcher.JsonOrder{id.String(), "1", "gold", 0, 100, 100, "partial"}
+	ol.AddOrder(JsonOrder{id.String(), "1", "gold", 0, 100, 100})
 	o := ol.PopFront()
 	if o.UserID != "1" || o.Op != 0 || o.Volume != 100 || o.Price != 100 {
 		t.Errorf("AddOrder failed")
