@@ -1,8 +1,10 @@
 package database
 
-import "trading/pkg/matcher"
+import (
+	"trading/pkg/entity"
+)
 
-func NewRepository(dbType string) matcher.OrderRepository {
+func NewRepository(dbType string) entity.PendingOrderRepository {
 	switch dbType {
 	case "memory":
 		repo := make(MemoryRepository)

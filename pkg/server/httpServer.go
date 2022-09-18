@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"trading/pkg/entity"
 	"trading/pkg/matcher"
 )
 
@@ -19,7 +20,7 @@ func (h *HttpServer) Serve() {
 func (h *HttpServer) OrderReqHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("OrderReqHandler")
 	if r.Method == "POST" {
-		var newOrder matcher.Order
+		var newOrder entity.Order
 		err := json.NewDecoder(r.Body).Decode(&newOrder)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

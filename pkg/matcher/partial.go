@@ -1,16 +1,20 @@
 package matcher
 
+import (
+	"trading/pkg/entity"
+)
+
 type PartialMatcher struct {
-	Or OrderRepository
+	Or entity.PendingOrderRepository
 }
 
-func (p *PartialMatcher) Match(newOrder Order) (string, error) {
+func (p *PartialMatcher) Match(newOrder entity.Order) (string, error) {
 	price := newOrder.Price
-	condition := QueryCondition{
+	condition := entity.QueryCondition{
 		Op:    newOrder.Op,
 		Price: price,
 	}
-	orderQueue := p.Or.Query(condition)
+	orderQueue := p.Or.Query(entity.QueryCondition{Op: entity.GetOppositeOp(newOrder.Op), Price: price})
 	if orderQueue == nil {
 		p.Or.Insert(condition, newOrder)
 		// orders.CommitTx(price)
@@ -30,7 +34,7 @@ func (p *PartialMatcher) Match(newOrder Order) (string, error) {
 			newOrderCopy.Volume = 0
 		}
 	}
-	p.Or.Update(condition, orderQueueCopy)
+	p.Or.Update(entity.QueryCondition{Op: entity.GetOppositeOp(newOrder.Op), Price: price}, orderQueueCopy)
 	if newOrderCopy.Volume > 0 {
 		p.Or.Insert(condition, newOrderCopy)
 		// orders.CommitTx(price)

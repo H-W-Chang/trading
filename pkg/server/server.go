@@ -2,6 +2,7 @@ package server
 
 import (
 	"log"
+	"trading/pkg/entity"
 	"trading/pkg/matcher"
 )
 
@@ -9,9 +10,9 @@ type Server interface {
 	Serve()
 }
 
-var or matcher.OrderRepository
+var or entity.PendingOrderRepository
 
-func NewServer(serverType string, repo matcher.OrderRepository) Server {
+func NewServer(serverType string, repo entity.PendingOrderRepository) Server {
 	or = repo
 	switch serverType {
 	case "http":
