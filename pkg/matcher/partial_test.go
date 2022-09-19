@@ -2,6 +2,8 @@ package matcher
 
 import (
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"trading/pkg/database"
 	"trading/pkg/entity"
@@ -91,7 +93,6 @@ func FuzzMatchMany(f *testing.F) {
 		for i := 0; i < count; i++ {
 			var volume int
 			volumeFuzz.Fuzz(&volume)
-			volume = volume%100 + 1
 			pendingOrder := entity.Order{OrderID: strconv.Itoa(i + 1), UserID: strconv.Itoa(i + 1), Item: "gold", Op: op, Volume: volume, Price: price, MatchRule: "partial"}
 			t.Logf("pendingOrder: %+v", pendingOrder)
 			err := pendingOrder.Validate()
@@ -108,7 +109,6 @@ func FuzzMatchMany(f *testing.F) {
 		for i := 0; i < count; i++ {
 			var volume int
 			volumeFuzz.Fuzz(&volume)
-			volume = volume%100 + 1
 			newOrder := entity.Order{OrderID: strconv.Itoa(i + 1), UserID: strconv.Itoa(i + 1), Item: "gold", Op: oppositeOp, Volume: volume, Price: price, MatchRule: "partial"}
 			t.Logf("newOrder: %+v", newOrder)
 			err := newOrder.Validate()
@@ -146,6 +146,109 @@ func FuzzMatchMany(f *testing.F) {
 				t.Errorf("expected 0 got %d", len(pendingOrder))
 			}
 			pendingOrder = repo.Query(entity.QueryCondition{Op: oppositeOp, Price: price})
+			if len(pendingOrder) != 0 {
+				t.Errorf("expected 0 got %d", len(pendingOrder))
+			}
+		}
+		t.Cleanup(func() { repo.Delete(entity.QueryCondition{Op: entity.All, Price: price}) })
+	})
+}
+
+func FuzzMatchManyAsync(f *testing.F) {
+	f.Add(100.0)
+	// f.Add(2.4)
+	// f.Add(1341.0)
+	f.Fuzz(func(t *testing.T, price float64) {
+		var wg sync.WaitGroup
+		var totalBuyVolume, totalSellVolume int = 0, 0
+		f := fuzz.New().Funcs(func(i *int, c fuzz.Continue) {
+			*i = c.Intn(10) + 1
+		})
+		volumeFuzz := fuzz.New().Funcs(func(i *int, c fuzz.Continue) {
+			*i = c.Intn(100) + 1
+		})
+		var orderId int32 = 0
+		var userCount int
+		f.Fuzz(&userCount)
+		t.Logf("buy user count: %d", userCount)
+		//buy order
+		wg.Add(userCount)
+		for i := 0; i < userCount; i++ {
+			go func(i int) {
+				var orderCount int
+				f.Fuzz(&orderCount)
+				t.Logf("user %v buy order count: %d", i+1, orderCount)
+				for j := 0; j < orderCount; j++ {
+					var volume int
+					volumeFuzz.Fuzz(&volume)
+					atomic.AddInt32(&orderId, 1)
+					newOrder := entity.Order{OrderID: strconv.Itoa(int(orderId)), UserID: strconv.Itoa(i + 1), Item: "gold", Op: 0, Volume: volume, Price: price, MatchRule: "partial"}
+					t.Logf("user %v new buy order: %+v", i+1, newOrder)
+					err := newOrder.Validate()
+					if err != nil {
+						return
+					}
+					totalBuyVolume += volume
+					result, err := partialMatcher.Match(newOrder)
+					t.Logf("result: %v, err: %v", result, err)
+				}
+				wg.Done()
+			}(i)
+		}
+		//sell order
+		f.Fuzz(&userCount)
+		t.Logf("sell user count: %d", userCount)
+		wg.Add(userCount)
+		for i := 0; i < userCount; i++ {
+			go func(i int) {
+				var orderCount int
+				f.Fuzz(&orderCount)
+				t.Logf("user %v sell order count: %d", i+1, orderCount)
+				for j := 0; j < orderCount; j++ {
+					var volume int
+					volumeFuzz.Fuzz(&volume)
+					atomic.AddInt32(&orderId, 1)
+					newOrder := entity.Order{OrderID: strconv.Itoa(int(orderId)), UserID: strconv.Itoa(i + 1), Item: "gold", Op: 1, Volume: volume, Price: price, MatchRule: "partial"}
+					t.Logf("user %v new sell order: %+v", i+1, newOrder)
+					err := newOrder.Validate()
+					if err != nil {
+						return
+					}
+					totalSellVolume += volume
+					result, err := partialMatcher.Match(newOrder)
+					t.Logf("result: %v, err: %v", result, err)
+				}
+				wg.Done()
+			}(i)
+		}
+		wg.Wait()
+		t.Logf("totalBuyVolume %v, totalSellVolume %v", totalBuyVolume, totalSellVolume)
+		if totalBuyVolume > totalSellVolume {
+			pendingOrder := repo.Query(entity.QueryCondition{Op: 0, Price: price})
+			volumeLeft := 0
+			for i := range pendingOrder {
+				volumeLeft += pendingOrder[i].Volume
+				t.Logf("buy orderId: %v, volume: %v", pendingOrder[i].OrderID, pendingOrder[i].Volume)
+			}
+			if volumeLeft != (totalBuyVolume - totalSellVolume) {
+				t.Errorf("expected %d got %d", totalBuyVolume-totalSellVolume, volumeLeft)
+			}
+		} else if totalBuyVolume < totalSellVolume {
+			pendingOrder := repo.Query(entity.QueryCondition{Op: 1, Price: price})
+			volumeLeft := 0
+			for i := range pendingOrder {
+				volumeLeft += pendingOrder[i].Volume
+				t.Logf("sell orderId: %v, volume: %v", pendingOrder[i].OrderID, pendingOrder[i].Volume)
+			}
+			if volumeLeft != (totalSellVolume - totalBuyVolume) {
+				t.Errorf("expected %d got %d", totalSellVolume-totalBuyVolume, volumeLeft)
+			}
+		} else {
+			pendingOrder := repo.Query(entity.QueryCondition{Op: 0, Price: price})
+			if len(pendingOrder) != 0 {
+				t.Errorf("expected 0 got %d", len(pendingOrder))
+			}
+			pendingOrder = repo.Query(entity.QueryCondition{Op: 1, Price: price})
 			if len(pendingOrder) != 0 {
 				t.Errorf("expected 0 got %d", len(pendingOrder))
 			}

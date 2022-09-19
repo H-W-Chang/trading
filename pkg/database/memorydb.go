@@ -82,11 +82,11 @@ func (m MemoryRepository) Delete(condition entity.QueryCondition) error {
 				if orderQueue, ok := opMap[condition.Price]; ok {
 					if orderQueue != nil {
 						if orderQueue.inTransaction && orderQueue.lockId == condition.LockId {
-							delete(m[entity.Buy], condition.Price)
+							orderQueue.queue = []entity.Order{}
 						} else {
 							orderQueue.mux.Lock()
 							defer orderQueue.mux.Unlock()
-							delete(m[entity.Buy], condition.Price)
+							orderQueue.queue = []entity.Order{}
 						}
 					}
 				}
@@ -95,11 +95,11 @@ func (m MemoryRepository) Delete(condition entity.QueryCondition) error {
 			if orderQueue, ok := m[condition.Op][condition.Price]; ok {
 				if orderQueue != nil {
 					if orderQueue.inTransaction && orderQueue.lockId == condition.LockId {
-						delete(m[condition.Op], condition.Price)
+						orderQueue.queue = []entity.Order{}
 					} else {
 						orderQueue.mux.Lock()
 						defer orderQueue.mux.Unlock()
-						delete(m[condition.Op], condition.Price)
+						orderQueue.queue = []entity.Order{}
 					}
 				}
 			}

@@ -133,8 +133,7 @@ func TestTransaction(t *testing.T) {
 	// first buy order coming
 	go func() {
 		atomic.AddInt32(&id, 1)
-		condition := entity.QueryCondition{Op: 1, Price: price}
-		condition.OrderID = strconv.Itoa(int(id))
+		condition := entity.QueryCondition{OrderID: strconv.Itoa(int(id)), Op: 1, Price: price}
 		lockId := repo.Lock(condition)
 		condition.LockId = lockId
 		condition.OrderID = ""
@@ -164,7 +163,7 @@ func TestTransaction(t *testing.T) {
 	time.Sleep(1 * time.Second)
 	go func() {
 		atomic.AddInt32(&id, 1)
-		condition.OrderID = strconv.Itoa(int(id))
+		condition := entity.QueryCondition{OrderID: strconv.Itoa(int(id)), Op: 1, Price: price}
 		lockId := repo.Lock(condition)
 		condition.LockId = lockId
 		condition.OrderID = ""
@@ -183,7 +182,7 @@ func TestTransaction(t *testing.T) {
 		wg.Done()
 	}()
 	wg.Wait()
-	orders := repo.Query(condition)
+	orders := repo.Query(entity.QueryCondition{Op: 1, Price: price})
 	t.Logf("orders: %+v", orders)
 	if len(orders) != 5 {
 		t.Errorf("expected 5 got %d", len(orders))

@@ -12,7 +12,8 @@ func (p *PartialMatcher) Match(newOrder entity.Order) (string, error) {
 	price := newOrder.Price
 	condition := entity.QueryCondition{OrderID: newOrder.OrderID, Op: newOrder.Op, Price: price}
 	oppositeCond := entity.QueryCondition{OrderID: newOrder.OrderID, Op: entity.GetOppositeOp(newOrder.Op), Price: price}
-	p.Or.Lock(oppositeCond)
+	lockId := p.Or.Lock(oppositeCond)
+	oppositeCond.LockId = lockId
 	defer p.Or.Unlock(oppositeCond)
 	orderQueue := p.Or.Query(oppositeCond)
 	if orderQueue == nil {
