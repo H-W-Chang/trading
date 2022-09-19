@@ -2,11 +2,13 @@ package database_test
 
 import (
 	"os"
+	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 	"trading/pkg/database"
 	"trading/pkg/entity"
-
-	"github.com/google/uuid"
 )
 
 var repo entity.PendingOrderRepository
@@ -22,57 +24,168 @@ func TestGetDatabase(t *testing.T) {
 	}
 }
 
-func TestMemoryRepository(t *testing.T) {
-	id := uuid.New()
-	order := entity.Order{OrderID: id.String(), UserID: "1", Item: "gold", Op: 0, Volume: 100, Price: 100.0, MatchRule: "partial"}
+func TestQueryEmpty(t *testing.T) {
+	price := 100.0
 	condition := entity.QueryCondition{Op: 0, Price: 100.0}
-	err := repo.Insert(condition, order)
-	if err != nil {
-		t.Error(err)
-	}
 	orders := repo.Query(condition)
-	if len(orders) != 1 {
-		t.Errorf("expected 1 got %d", len(orders))
+	if len(orders) != 0 {
+		t.Errorf("expected 0 got %d", len(orders))
 	}
-	t.Logf("orders: %+v", orders)
-	t.Cleanup(func() { repo.Delete(condition) })
+	t.Cleanup(func() { repo.Delete(entity.QueryCondition{Op: entity.All, Price: price}) })
 }
 
-func TestUpdateOrders(t *testing.T) {
+func TestUpdateEmpty(t *testing.T) {
+	id := 1
 	price := 100.0
-	condition := entity.QueryCondition{Op: 0, Price: price}
-	repo.Update(condition, []entity.Order{})
-	orders := repo.Query(condition)
-	if len(orders) != 0 {
-		t.Errorf("expected 0 got %d", len(orders))
+	condition := entity.QueryCondition{Op: 0, Price: 100.0}
+	var orders []entity.Order
+	for i := 0; i < 10; i, id = i+1, id+1 {
+		orders = append(orders, entity.Order{OrderID: strconv.Itoa(id), UserID: strconv.Itoa(id), Item: "gold", Op: 0, Volume: 10, Price: price, MatchRule: "partial"})
 	}
-	id := uuid.New()
-	order := entity.Order{OrderID: id.String(), UserID: "1", Item: "gold", Op: 0, Volume: 100, Price: 100.0, MatchRule: "partial"}
-	repo.Update(condition, []entity.Order{order})
+	repo.Update(condition, orders)
 	orders = repo.Query(condition)
-	if len(orders) != 1 {
-		t.Errorf("expected 1 got %d", len(orders))
-	}
 	t.Logf("orders: %+v", orders)
-	t.Cleanup(func() { repo.Delete(condition) })
+	if len(orders) != 10 {
+		t.Errorf("expected 10 got %d", len(orders))
+	}
+	orders = []entity.Order{}
+	for i := 0; i < 5; i, id = i+1, id+1 {
+		orders = append(orders, entity.Order{OrderID: strconv.Itoa(id), UserID: strconv.Itoa(id), Item: "gold", Op: 0, Volume: 10, Price: price, MatchRule: "partial"})
+	}
+	repo.Update(condition, orders)
+	orders = repo.Query(condition)
+	t.Logf("orders: %+v", orders)
+	if len(orders) != 5 {
+		t.Errorf("expected 5 got %d", len(orders))
+	}
+	t.Cleanup(func() { repo.Delete(entity.QueryCondition{Op: entity.All, Price: price}) })
 }
-func TestFindByPrice(t *testing.T) {
+
+func TestInsert(t *testing.T) {
+	id := 1
 	price := 100.0
 	condition := entity.QueryCondition{Op: 0, Price: price}
-	orders := repo.Query(condition)
-	if len(orders) != 0 {
-		t.Errorf("expected 0 got %d", len(orders))
-	}
-	id := uuid.New()
-	order := entity.Order{OrderID: id.String(), UserID: "1", Item: "gold", Op: 0, Volume: 100, Price: 100.0, MatchRule: "partial"}
+	order := entity.Order{OrderID: strconv.Itoa(id), UserID: strconv.Itoa(id), Item: "gold", Op: 0, Volume: 100, Price: price, MatchRule: "partial"}
+	id++
 	err := repo.Insert(condition, order)
 	if err != nil {
 		t.Error(err)
 	}
-	orders = repo.Query(condition)
-	if len(orders) != 1 {
-		t.Errorf("expected 1 got %d", len(orders))
+	order = entity.Order{OrderID: strconv.Itoa(id), UserID: strconv.Itoa(id), Item: "gold", Op: 0, Volume: 100, Price: price, MatchRule: "partial"}
+	err = repo.Insert(condition, order)
+	if err != nil {
+		t.Error("expected error got nil")
 	}
+	orders := repo.Query(condition)
 	t.Logf("orders: %+v", orders)
-	t.Cleanup(func() { repo.Delete(condition) })
+	if len(orders) != 2 {
+		t.Errorf("expected 2 got %d", len(orders))
+	}
+	t.Cleanup(func() { repo.Delete(entity.QueryCondition{Op: entity.All, Price: price}) })
+}
+
+func TestDelete(t *testing.T) {
+	id := 1
+	price := 100.0
+	buyCondition := entity.QueryCondition{Op: 0, Price: price}
+	sellCondition := entity.QueryCondition{Op: 1, Price: price}
+	//insert buy
+	order := entity.Order{OrderID: strconv.Itoa(id), UserID: strconv.Itoa(id), Item: "gold", Op: 0, Volume: 100, Price: price, MatchRule: "partial"}
+	id++
+	err := repo.Insert(buyCondition, order)
+	if err != nil {
+		t.Error(err)
+	}
+	//insert sell
+	order = entity.Order{OrderID: strconv.Itoa(id), UserID: strconv.Itoa(id), Item: "gold", Op: 1, Volume: 100, Price: price, MatchRule: "partial"}
+	id++
+	err = repo.Insert(sellCondition, order)
+	if err != nil {
+		t.Error(err)
+	}
+	//delete buy
+	repo.Delete(buyCondition)
+	orders := repo.Query(buyCondition)
+	if len(orders) != 0 {
+		t.Errorf("expected 0 got %d", len(orders))
+	}
+	//detete sell
+	repo.Delete(sellCondition)
+	orders = repo.Query(sellCondition)
+	if len(orders) != 0 {
+		t.Errorf("expected 0 got %d", len(orders))
+	}
+}
+
+// use case
+// 3 order in sell, 2 buy order coming
+func TestTransaction(t *testing.T) {
+	var wg sync.WaitGroup
+	var id int32 = 0
+	price := 100.0
+	//insert 3 sell order, volume 10
+	for i := 0; i < 3; i++ {
+		atomic.AddInt32(&id, 1)
+		order := entity.Order{OrderID: strconv.Itoa(int(id)), UserID: strconv.Itoa(int(id)), Item: "gold", Op: 1, Volume: 10, Price: price, MatchRule: "partial"}
+		repo.Insert(entity.QueryCondition{Op: 1, Price: price}, order)
+	}
+	wg.Add(2)
+	// first buy order coming
+	go func() {
+		atomic.AddInt32(&id, 1)
+		condition := entity.QueryCondition{Op: 1, Price: price}
+		condition.OrderID = strconv.Itoa(int(id))
+		lockId := repo.Lock(condition)
+		condition.LockId = lockId
+		condition.OrderID = ""
+		orders := repo.Query(condition)
+		if len(orders) != 3 {
+			t.Errorf("expected 3 got %d", len(orders))
+		}
+		repo.Delete(condition)
+		orders = repo.Query(condition)
+		if len(orders) != 0 {
+			t.Errorf("expected 0 got %d", len(orders))
+		}
+		//insert 3 sell order
+		for i := 0; i < 3; i++ {
+			atomic.AddInt32(&id, 1)
+			order := entity.Order{OrderID: strconv.Itoa(int(id)), UserID: strconv.Itoa(int(id)), Item: "gold", Op: 1, Volume: 10, Price: price, MatchRule: "partial"}
+			repo.Insert(condition, order)
+			time.Sleep(time.Second)
+		}
+		orders = repo.Query(condition)
+		if len(orders) != 3 {
+			t.Errorf("expected 3 got %d", len(orders))
+		}
+		repo.Unlock(condition)
+		wg.Done()
+	}()
+	time.Sleep(1 * time.Second)
+	go func() {
+		atomic.AddInt32(&id, 1)
+		condition.OrderID = strconv.Itoa(int(id))
+		lockId := repo.Lock(condition)
+		condition.LockId = lockId
+		condition.OrderID = ""
+		var orders []entity.Order
+		for i := 0; i < 5; i++ {
+			atomic.AddInt32(&id, 1)
+			order := entity.Order{OrderID: strconv.Itoa(int(id)), UserID: strconv.Itoa(int(id)), Item: "gold", Op: 1, Volume: 10, Price: price, MatchRule: "partial"}
+			orders = append(orders, order)
+		}
+		repo.Update(condition, orders)
+		orders = repo.Query(condition)
+		if len(orders) != 5 {
+			t.Errorf("expected 5 got %d", len(orders))
+		}
+		repo.Unlock(condition)
+		wg.Done()
+	}()
+	wg.Wait()
+	orders := repo.Query(condition)
+	t.Logf("orders: %+v", orders)
+	if len(orders) != 5 {
+		t.Errorf("expected 5 got %d", len(orders))
+	}
 }

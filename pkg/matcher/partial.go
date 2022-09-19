@@ -10,14 +10,13 @@ type PartialMatcher struct {
 
 func (p *PartialMatcher) Match(newOrder entity.Order) (string, error) {
 	price := newOrder.Price
-	condition := entity.QueryCondition{
-		Op:    newOrder.Op,
-		Price: price,
-	}
-	orderQueue := p.Or.Query(entity.QueryCondition{Op: entity.GetOppositeOp(newOrder.Op), Price: price})
+	condition := entity.QueryCondition{OrderID: newOrder.OrderID, Op: newOrder.Op, Price: price}
+	oppositeCond := entity.QueryCondition{OrderID: newOrder.OrderID, Op: entity.GetOppositeOp(newOrder.Op), Price: price}
+	p.Or.Lock(oppositeCond)
+	defer p.Or.Unlock(oppositeCond)
+	orderQueue := p.Or.Query(oppositeCond)
 	if orderQueue == nil {
 		p.Or.Insert(condition, newOrder)
-		// orders.CommitTx(price)
 		return Pending, nil
 	}
 	orderQueueCopy := orderQueue
@@ -34,12 +33,10 @@ func (p *PartialMatcher) Match(newOrder entity.Order) (string, error) {
 			newOrderCopy.Volume = 0
 		}
 	}
-	p.Or.Update(entity.QueryCondition{Op: entity.GetOppositeOp(newOrder.Op), Price: price}, orderQueueCopy)
+	p.Or.Update(oppositeCond, orderQueueCopy)
 	if newOrderCopy.Volume > 0 {
 		p.Or.Insert(condition, newOrderCopy)
-		// orders.CommitTx(price)
 		return Pending, nil
 	}
-	// orders.CommitTx(price)
 	return Deal, nil
 }

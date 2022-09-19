@@ -6,6 +6,7 @@ type QueryCondition struct {
 	OrderID string
 	Op      int8
 	Price   float64
+	LockId  string
 }
 
 const (
@@ -19,6 +20,8 @@ type PendingOrderRepository interface {
 	Update(condition QueryCondition, orders []Order) error
 	Insert(condition QueryCondition, order Order) error
 	Delete(condition QueryCondition) error
+	Lock(condition QueryCondition) string
+	Unlock(condition QueryCondition) error
 }
 type Order struct {
 	OrderID   string  `json:"orderID"`
