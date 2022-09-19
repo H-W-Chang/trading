@@ -121,19 +121,19 @@ func TestDelete(t *testing.T) {
 // 3 order in sell, 2 buy order coming
 func TestTransaction(t *testing.T) {
 	var wg sync.WaitGroup
-	var id int32 = 0
+	var orderId int32 = 0
 	price := 100.0
 	//insert 3 sell order, volume 10
 	for i := 0; i < 3; i++ {
-		atomic.AddInt32(&id, 1)
-		order := entity.Order{OrderID: strconv.Itoa(int(id)), UserID: strconv.Itoa(int(id)), Item: "gold", Op: 1, Volume: 10, Price: price, MatchRule: "partial"}
+		atomic.AddInt32(&orderId, 1)
+		order := entity.Order{OrderID: strconv.Itoa(int(atomic.LoadInt32(&orderId))), UserID: strconv.Itoa(int(atomic.LoadInt32(&orderId))), Item: "gold", Op: 1, Volume: 10, Price: price, MatchRule: "partial"}
 		repo.Insert(entity.QueryCondition{Op: 1, Price: price}, order)
 	}
 	wg.Add(2)
 	// first buy order coming
 	go func() {
-		atomic.AddInt32(&id, 1)
-		condition := entity.QueryCondition{OrderID: strconv.Itoa(int(id)), Op: 1, Price: price}
+		atomic.AddInt32(&orderId, 1)
+		condition := entity.QueryCondition{OrderID: strconv.Itoa(int(atomic.LoadInt32(&orderId))), Op: 1, Price: price}
 		lockId := repo.Lock(condition)
 		condition.LockId = lockId
 		condition.OrderID = ""
@@ -148,8 +148,8 @@ func TestTransaction(t *testing.T) {
 		}
 		//insert 3 sell order
 		for i := 0; i < 3; i++ {
-			atomic.AddInt32(&id, 1)
-			order := entity.Order{OrderID: strconv.Itoa(int(id)), UserID: strconv.Itoa(int(id)), Item: "gold", Op: 1, Volume: 10, Price: price, MatchRule: "partial"}
+			atomic.AddInt32(&orderId, 1)
+			order := entity.Order{OrderID: strconv.Itoa(int(atomic.LoadInt32(&orderId))), UserID: strconv.Itoa(int(atomic.LoadInt32(&orderId))), Item: "gold", Op: 1, Volume: 10, Price: price, MatchRule: "partial"}
 			repo.Insert(condition, order)
 			time.Sleep(time.Second)
 		}
@@ -162,15 +162,15 @@ func TestTransaction(t *testing.T) {
 	}()
 	time.Sleep(1 * time.Second)
 	go func() {
-		atomic.AddInt32(&id, 1)
-		condition := entity.QueryCondition{OrderID: strconv.Itoa(int(id)), Op: 1, Price: price}
+		atomic.AddInt32(&orderId, 1)
+		condition := entity.QueryCondition{OrderID: strconv.Itoa(int(atomic.LoadInt32(&orderId))), Op: 1, Price: price}
 		lockId := repo.Lock(condition)
 		condition.LockId = lockId
 		condition.OrderID = ""
 		var orders []entity.Order
 		for i := 0; i < 5; i++ {
-			atomic.AddInt32(&id, 1)
-			order := entity.Order{OrderID: strconv.Itoa(int(id)), UserID: strconv.Itoa(int(id)), Item: "gold", Op: 1, Volume: 10, Price: price, MatchRule: "partial"}
+			atomic.AddInt32(&orderId, 1)
+			order := entity.Order{OrderID: strconv.Itoa(int(atomic.LoadInt32(&orderId))), UserID: strconv.Itoa(int(atomic.LoadInt32(&orderId))), Item: "gold", Op: 1, Volume: 10, Price: price, MatchRule: "partial"}
 			orders = append(orders, order)
 		}
 		repo.Update(condition, orders)

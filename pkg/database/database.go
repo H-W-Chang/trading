@@ -7,10 +7,8 @@ import (
 func NewRepository(dbType string) entity.PendingOrderRepository {
 	switch dbType {
 	case "memory":
-		repo := make(MemoryRepository)
-		repo[0] = make(map[float64]*OrderQueue)
-		repo[1] = make(map[float64]*OrderQueue)
-		return &repo
+		repo := &MemoryRepository{}
+		return repo
 	}
 	return nil
 }
