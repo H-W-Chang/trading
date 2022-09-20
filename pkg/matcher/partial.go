@@ -13,10 +13,11 @@ func (p *PartialMatcher) Match(newOrder entity.Order) (string, error) {
 	condition := entity.QueryCondition{OrderID: newOrder.OrderID, Op: newOrder.Op, Price: price}
 	oppositeCond := entity.QueryCondition{OrderID: newOrder.OrderID, Op: entity.GetOppositeOp(newOrder.Op), Price: price}
 	lockId := p.Or.Lock(oppositeCond)
+	defer p.Or.Unlock(oppositeCond)
 	oppositeCond.LockId = lockId
+	condition.LockId = lockId
 	orderQueue := p.Or.Query(oppositeCond)
 	if orderQueue == nil {
-		p.Or.Unlock(oppositeCond)
 		p.Or.Insert(condition, newOrder)
 		return Pending, nil
 	}
@@ -36,10 +37,8 @@ func (p *PartialMatcher) Match(newOrder entity.Order) (string, error) {
 	}
 	p.Or.Update(oppositeCond, orderQueueCopy)
 	if newOrderCopy.Volume > 0 {
-		p.Or.Unlock(oppositeCond)
 		p.Or.Insert(condition, newOrderCopy)
 		return Pending, nil
 	}
-	p.Or.Unlock(oppositeCond)
 	return Deal, nil
 }

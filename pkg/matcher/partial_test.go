@@ -158,32 +158,127 @@ func FuzzMatchMany(f *testing.F) {
 	})
 }
 
-func FuzzMatchManyAsync(f *testing.F) {
-	const MAX_COUNT = 1
-	const MAX_VOLUME = 1
-	f.Add(100.0)
-	// f.Add(2.4)
-	// f.Add(1341.0)
-	f.Fuzz(func(t *testing.T, price float64) {
+func TestMatchManyAsync(t *testing.T) {
+	const MAX_COUNT = 10
+	const MAX_VOLUME = 100
+	const price = 100.0
+	var wg sync.WaitGroup
+	var totalBuyVolume, totalSellVolume int32 = 0, 0
+	var orderId int32 = 0
+	rand.Seed(time.Now().UnixNano())
+	userCount := rand.Intn(MAX_COUNT) + 1
+	t.Logf("buy user count: %d", userCount)
+	//buy order
+	wg.Add(userCount)
+	for i := 0; i < userCount; i++ {
+		go func(count int) {
+			rand.Seed(time.Now().UnixNano())
+			orderCount := rand.Intn(MAX_COUNT) + 1
+			t.Logf("user %v buy order count: %d", count, orderCount)
+			for j := 0; j < orderCount; j++ {
+				rand.Seed(time.Now().UnixNano())
+				volume := rand.Intn(MAX_VOLUME) + 1
+				atomic.AddInt32(&orderId, 1)
+				newOrder := entity.Order{OrderID: strconv.Itoa(int(atomic.LoadInt32(&orderId))), UserID: strconv.Itoa(count), Item: "gold", Op: 0, Volume: volume, Price: price, MatchRule: "partial"}
+				t.Logf("user %v new buy order: %+v", count, newOrder)
+				err := newOrder.Validate()
+				if err != nil {
+					return
+				}
+				atomic.AddInt32(&totalBuyVolume, int32(volume))
+				// totalBuyVolume += volume
+				// partialMatcher.Match(newOrder)
+				result, err := partialMatcher.Match(newOrder)
+				t.Logf("result: %v, err: %v", result, err)
+			}
+			wg.Done()
+		}(i + 1)
+	}
+	//sell order
+	rand.Seed(time.Now().UnixNano())
+	userCount = rand.Intn(MAX_COUNT) + 1
+	t.Logf("sell user count: %d", userCount)
+	wg.Add(userCount)
+	for i := 0; i < userCount; i++ {
+		go func(count int) {
+			rand.Seed(time.Now().UnixNano())
+			orderCount := rand.Intn(MAX_COUNT) + 1
+			t.Logf("user %v sell order count: %d", count, orderCount)
+			for j := 0; j < orderCount; j++ {
+				rand.Seed(time.Now().UnixNano())
+				volume := rand.Intn(MAX_VOLUME) + 1
+				atomic.AddInt32(&orderId, 1)
+				newOrder := entity.Order{OrderID: strconv.Itoa(int(atomic.LoadInt32(&orderId))), UserID: strconv.Itoa(count), Item: "gold", Op: 1, Volume: volume, Price: price, MatchRule: "partial"}
+				t.Logf("user %v new sell order: %+v", count, newOrder)
+				err := newOrder.Validate()
+				if err != nil {
+					return
+				}
+				atomic.AddInt32(&totalSellVolume, int32(volume))
+				// totalSellVolume += volume
+				// partialMatcher.Match(newOrder)
+				result, err := partialMatcher.Match(newOrder)
+				t.Logf("result: %v, err: %v", result, err)
+			}
+			wg.Done()
+		}(i + 1)
+	}
+	wg.Wait()
+	t.Logf("totalBuyVolume %v, totalSellVolume %v", totalBuyVolume, totalSellVolume)
+	if totalBuyVolume > totalSellVolume {
+		pendingOrder := repo.Query(entity.QueryCondition{Op: 0, Price: price})
+		volumeLeft := 0
+		for i := range pendingOrder {
+			volumeLeft += pendingOrder[i].Volume
+			t.Logf("buy orderId: %v, volume: %v", pendingOrder[i].OrderID, pendingOrder[i].Volume)
+		}
+		if volumeLeft != int(totalBuyVolume-totalSellVolume) {
+			t.Errorf("expected %d got %d", totalBuyVolume-totalSellVolume, volumeLeft)
+		}
+	} else if totalBuyVolume < totalSellVolume {
+		pendingOrder := repo.Query(entity.QueryCondition{Op: 1, Price: price})
+		volumeLeft := 0
+		for i := range pendingOrder {
+			volumeLeft += pendingOrder[i].Volume
+			t.Logf("sell orderId: %v, volume: %v", pendingOrder[i].OrderID, pendingOrder[i].Volume)
+		}
+		if volumeLeft != int(totalSellVolume-totalBuyVolume) {
+			t.Errorf("expected %d got %d", totalSellVolume-totalBuyVolume, volumeLeft)
+		}
+	} else {
+		pendingOrder := repo.Query(entity.QueryCondition{Op: 0, Price: price})
+		if len(pendingOrder) != 0 {
+			t.Errorf("expected 0 got %d", len(pendingOrder))
+		}
+		pendingOrder = repo.Query(entity.QueryCondition{Op: 1, Price: price})
+		if len(pendingOrder) != 0 {
+			t.Errorf("expected 0 got %d", len(pendingOrder))
+		}
+	}
+	t.Cleanup(func() { repo.Delete(entity.QueryCondition{Op: entity.All, Price: price}) })
+}
+
+func BenchmarkMatchManyAsync(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		const MAX_COUNT = 10
+		const MAX_VOLUME = 100
+		const price = 100.0
 		var wg sync.WaitGroup
 		var totalBuyVolume, totalSellVolume int32 = 0, 0
 		var orderId int32 = 0
 		rand.Seed(time.Now().UnixNano())
 		userCount := rand.Intn(MAX_COUNT) + 1
-		t.Logf("buy user count: %d", userCount)
 		//buy order
 		wg.Add(userCount)
 		for i := 0; i < userCount; i++ {
 			go func(count int) {
 				rand.Seed(time.Now().UnixNano())
 				orderCount := rand.Intn(MAX_COUNT) + 1
-				t.Logf("user %v buy order count: %d", count, orderCount)
 				for j := 0; j < orderCount; j++ {
 					rand.Seed(time.Now().UnixNano())
 					volume := rand.Intn(MAX_VOLUME) + 1
 					atomic.AddInt32(&orderId, 1)
 					newOrder := entity.Order{OrderID: strconv.Itoa(int(atomic.LoadInt32(&orderId))), UserID: strconv.Itoa(count), Item: "gold", Op: 0, Volume: volume, Price: price, MatchRule: "partial"}
-					// t.Logf("user %v new buy order: %+v", count, newOrder)
 					err := newOrder.Validate()
 					if err != nil {
 						return
@@ -192,7 +287,6 @@ func FuzzMatchManyAsync(f *testing.F) {
 					// totalBuyVolume += volume
 					partialMatcher.Match(newOrder)
 					// result, err := partialMatcher.Match(newOrder)
-					// t.Logf("result: %v, err: %v", result, err)
 				}
 				wg.Done()
 			}(i + 1)
@@ -200,19 +294,16 @@ func FuzzMatchManyAsync(f *testing.F) {
 		//sell order
 		rand.Seed(time.Now().UnixNano())
 		userCount = rand.Intn(MAX_COUNT) + 1
-		t.Logf("sell user count: %d", userCount)
 		wg.Add(userCount)
 		for i := 0; i < userCount; i++ {
 			go func(count int) {
 				rand.Seed(time.Now().UnixNano())
 				orderCount := rand.Intn(MAX_COUNT) + 1
-				t.Logf("user %v sell order count: %d", count, orderCount)
 				for j := 0; j < orderCount; j++ {
 					rand.Seed(time.Now().UnixNano())
 					volume := rand.Intn(MAX_VOLUME) + 1
 					atomic.AddInt32(&orderId, 1)
 					newOrder := entity.Order{OrderID: strconv.Itoa(int(atomic.LoadInt32(&orderId))), UserID: strconv.Itoa(count), Item: "gold", Op: 1, Volume: volume, Price: price, MatchRule: "partial"}
-					// t.Logf("user %v new sell order: %+v", count, newOrder)
 					err := newOrder.Validate()
 					if err != nil {
 						return
@@ -221,43 +312,12 @@ func FuzzMatchManyAsync(f *testing.F) {
 					// totalSellVolume += volume
 					partialMatcher.Match(newOrder)
 					// result, err := partialMatcher.Match(newOrder)
-					// t.Logf("result: %v, err: %v", result, err)
 				}
 				wg.Done()
 			}(i + 1)
 		}
 		wg.Wait()
-		t.Logf("totalBuyVolume %v, totalSellVolume %v", totalBuyVolume, totalSellVolume)
-		if totalBuyVolume > totalSellVolume {
-			pendingOrder := repo.Query(entity.QueryCondition{Op: 0, Price: price})
-			volumeLeft := 0
-			for i := range pendingOrder {
-				volumeLeft += pendingOrder[i].Volume
-				t.Logf("buy orderId: %v, volume: %v", pendingOrder[i].OrderID, pendingOrder[i].Volume)
-			}
-			if volumeLeft != int(totalBuyVolume-totalSellVolume) {
-				t.Errorf("expected %d got %d", totalBuyVolume-totalSellVolume, volumeLeft)
-			}
-		} else if totalBuyVolume < totalSellVolume {
-			pendingOrder := repo.Query(entity.QueryCondition{Op: 1, Price: price})
-			volumeLeft := 0
-			for i := range pendingOrder {
-				volumeLeft += pendingOrder[i].Volume
-				t.Logf("sell orderId: %v, volume: %v", pendingOrder[i].OrderID, pendingOrder[i].Volume)
-			}
-			if volumeLeft != int(totalSellVolume-totalBuyVolume) {
-				t.Errorf("expected %d got %d", totalSellVolume-totalBuyVolume, volumeLeft)
-			}
-		} else {
-			pendingOrder := repo.Query(entity.QueryCondition{Op: 0, Price: price})
-			if len(pendingOrder) != 0 {
-				t.Errorf("expected 0 got %d", len(pendingOrder))
-			}
-			pendingOrder = repo.Query(entity.QueryCondition{Op: 1, Price: price})
-			if len(pendingOrder) != 0 {
-				t.Errorf("expected 0 got %d", len(pendingOrder))
-			}
-		}
-		t.Cleanup(func() { repo.Delete(entity.QueryCondition{Op: entity.All, Price: price}) })
-	})
+
+		b.Cleanup(func() { repo.Delete(entity.QueryCondition{Op: entity.All, Price: price}) })
+	}
 }
