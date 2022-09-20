@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"trading/pkg/entity"
 )
 
@@ -23,9 +22,10 @@ import (
 //	}
 type OrderQueue struct {
 	queue         map[float64][]entity.Order
-	mux           sync.RWMutex
-	lockId        atomic.Value
-	inTransaction atomic.Bool
+	queueMutex    sync.RWMutex
+	metaMutex     sync.RWMutex
+	lockId        string
+	inTransaction bool
 }
 type MemoryRepository struct {
 	buyOrderQueue  OrderQueue
@@ -52,13 +52,17 @@ func (m *MemoryRepository) Query(condition entity.QueryCondition) []entity.Order
 	case entity.Sell:
 		orderQueue = &m.sellOrderQueue
 	}
+	orderQueue.metaMutex.RLock()
 
-	log.Printf("routine id: %v, trans: %v, order lockId: %v, condition lockId: %v, *orderQueue: %p", goid(), orderQueue.inTransaction.Load(), orderQueue.lockId.Load().(string), condition.LockId, orderQueue)
-	if orderQueue.inTransaction.Load() && orderQueue.lockId.Load().(string) == condition.LockId {
+	log.Printf("routine id: %v, trans: %v, order lockId: %v, condition lockId: %v, *orderQueue: %p", goid(), orderQueue.inTransaction, orderQueue.lockId, condition.LockId, orderQueue)
+	if orderQueue.inTransaction && orderQueue.lockId != "" && orderQueue.lockId == condition.LockId {
+		log.Printf("routine id: %v, query in transaction", goid())
+		orderQueue.metaMutex.RUnlock()
 	} else {
-		orderQueue.mux.RLock()
-		defer orderQueue.mux.RUnlock()
-
+		log.Printf("routine id: %v, query lock", goid())
+		orderQueue.metaMutex.RUnlock()
+		orderQueue.queueMutex.RLock()
+		defer orderQueue.queueMutex.RUnlock()
 	}
 	if orderQueue.queue == nil {
 		return nil
@@ -76,10 +80,13 @@ func (m *MemoryRepository) Update(condition entity.QueryCondition, orders []enti
 	case entity.Sell:
 		orderQueue = &m.sellOrderQueue
 	}
-	if orderQueue.inTransaction.Load() && orderQueue.lockId.Load().(string) == condition.LockId {
+	orderQueue.metaMutex.RLock()
+	if orderQueue.inTransaction && orderQueue.lockId != "" && orderQueue.lockId == condition.LockId {
+		orderQueue.metaMutex.RUnlock()
 	} else {
-		orderQueue.mux.Lock()
-		defer orderQueue.mux.Unlock()
+		orderQueue.metaMutex.RUnlock()
+		orderQueue.queueMutex.Lock()
+		defer orderQueue.queueMutex.Unlock()
 	}
 	if orderQueue.queue == nil {
 		orderQueue.queue = make(map[float64][]entity.Order)
@@ -97,11 +104,16 @@ func (m *MemoryRepository) Insert(condition entity.QueryCondition, order entity.
 		orderQueue = &m.sellOrderQueue
 	}
 
-	log.Printf("routine id: %v, trans: %v, order lockId: %v, condition lockId: %v, *orderQueue: %p", goid(), orderQueue.inTransaction.Load(), orderQueue.lockId.Load().(string), condition.LockId, orderQueue)
-	if orderQueue.inTransaction.Load() && orderQueue.lockId.Load().(string) == condition.LockId {
+	orderQueue.metaMutex.RLock()
+	log.Printf("routine id: %v, trans: %v, order lockId: %v, condition lockId: %v, *orderQueue: %p", goid(), orderQueue.inTransaction, orderQueue.lockId, condition.LockId, orderQueue)
+	if orderQueue.inTransaction && orderQueue.lockId != "" && orderQueue.lockId == condition.LockId {
+		log.Printf("routine id: %v, insert in transaction", goid())
+		orderQueue.metaMutex.RUnlock()
 	} else {
-		orderQueue.mux.Lock()
-		defer orderQueue.mux.Unlock()
+		log.Printf("routine id: %v, insert lock", goid())
+		orderQueue.metaMutex.RUnlock()
+		orderQueue.queueMutex.Lock()
+		defer orderQueue.queueMutex.Unlock()
 	}
 	if orderQueue.queue == nil {
 		orderQueue.queue = make(map[float64][]entity.Order)
@@ -119,11 +131,13 @@ func (m *MemoryRepository) Delete(condition entity.QueryCondition) error {
 		if condition.Op == entity.All {
 			//delete buy order queue
 			var orderQueue *OrderQueue = &m.buyOrderQueue
-
-			if orderQueue.inTransaction.Load() && orderQueue.lockId.Load().(string) == condition.LockId {
+			orderQueue.metaMutex.RLock()
+			if orderQueue.inTransaction && orderQueue.lockId == condition.LockId {
+				orderQueue.metaMutex.RUnlock()
 			} else {
-				orderQueue.mux.Lock()
-				defer orderQueue.mux.Unlock()
+				orderQueue.metaMutex.RUnlock()
+				orderQueue.queueMutex.Lock()
+				defer orderQueue.queueMutex.Unlock()
 			}
 			if orderQueue.queue == nil {
 				return nil
@@ -134,11 +148,13 @@ func (m *MemoryRepository) Delete(condition entity.QueryCondition) error {
 			orderQueue.queue[condition.Price] = []entity.Order{}
 			//delete sell order queue
 			orderQueue = &m.sellOrderQueue
-
-			if orderQueue.inTransaction.Load() && orderQueue.lockId.Load().(string) == condition.LockId {
+			orderQueue.metaMutex.RLock()
+			if orderQueue.inTransaction && orderQueue.lockId == condition.LockId {
+				orderQueue.metaMutex.RUnlock()
 			} else {
-				orderQueue.mux.Lock()
-				defer orderQueue.mux.Unlock()
+				orderQueue.metaMutex.RUnlock()
+				orderQueue.queueMutex.Lock()
+				defer orderQueue.queueMutex.Unlock()
 			}
 			if orderQueue.queue == nil {
 				return nil
@@ -155,10 +171,13 @@ func (m *MemoryRepository) Delete(condition entity.QueryCondition) error {
 			case entity.Sell:
 				orderQueue = &m.sellOrderQueue
 			}
-			if orderQueue.inTransaction.Load() && orderQueue.lockId.Load().(string) == condition.LockId {
+			orderQueue.metaMutex.RLock()
+			if orderQueue.inTransaction && orderQueue.lockId == condition.LockId {
+				orderQueue.metaMutex.RUnlock()
 			} else {
-				orderQueue.mux.Lock()
-				defer orderQueue.mux.Unlock()
+				orderQueue.metaMutex.RUnlock()
+				orderQueue.queueMutex.Lock()
+				defer orderQueue.queueMutex.Unlock()
 			}
 			if orderQueue.queue == nil {
 				return nil
@@ -182,10 +201,13 @@ func (m *MemoryRepository) Lock(condition entity.QueryCondition) string {
 	}
 	h := sha1.New()
 	io.WriteString(h, condition.OrderID)
-	orderQueue.mux.Lock()
-	orderQueue.inTransaction.Store(true)
-	orderQueue.lockId.Store(base64.URLEncoding.EncodeToString(h.Sum(nil)))
-	return orderQueue.lockId.Load().(string)
+	orderQueue.queueMutex.Lock()
+	orderQueue.metaMutex.Lock()
+	defer orderQueue.metaMutex.Unlock()
+	orderQueue.inTransaction = true
+	orderQueue.lockId = base64.URLEncoding.EncodeToString(h.Sum(nil))
+	log.Printf("lock routine id: %v, trans: %v, order lockId: %v, *orderQueue: %p", goid(), orderQueue.inTransaction, orderQueue.lockId, orderQueue)
+	return orderQueue.lockId
 }
 
 func (m *MemoryRepository) Unlock(condition entity.QueryCondition) error {
@@ -196,10 +218,13 @@ func (m *MemoryRepository) Unlock(condition entity.QueryCondition) error {
 	case entity.Sell:
 		orderQueue = &m.sellOrderQueue
 	}
-	if orderQueue.inTransaction.Load() && orderQueue.lockId.Load().(string) != "" {
-		orderQueue.inTransaction.Store(false)
-		orderQueue.lockId.Store("")
-		orderQueue.mux.Unlock()
+	orderQueue.metaMutex.Lock()
+	defer orderQueue.metaMutex.Unlock()
+	if orderQueue.inTransaction && orderQueue.lockId != "" {
+		log.Printf("unlock routine id: %v, trans: %v, order lockId: %v, *orderQueue: %p", goid(), orderQueue.inTransaction, orderQueue.lockId, orderQueue)
+		orderQueue.inTransaction = false
+		orderQueue.lockId = ""
+		orderQueue.queueMutex.Unlock()
 		return nil
 	}
 
