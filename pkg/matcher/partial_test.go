@@ -19,7 +19,7 @@ var partialMatcher PartialMatcher
 
 func TestMain(m *testing.M) {
 	// setup
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
 	repo = database.NewRepository("memory")
 	partialMatcher = PartialMatcher{Or: repo}
 	m.Run()
@@ -159,6 +159,8 @@ func FuzzMatchMany(f *testing.F) {
 }
 
 func FuzzMatchManyAsync(f *testing.F) {
+	const MAX_COUNT = 1
+	const MAX_VOLUME = 1
 	f.Add(100.0)
 	// f.Add(2.4)
 	// f.Add(1341.0)
@@ -167,57 +169,59 @@ func FuzzMatchManyAsync(f *testing.F) {
 		var totalBuyVolume, totalSellVolume int32 = 0, 0
 		var orderId int32 = 0
 		rand.Seed(time.Now().UnixNano())
-		userCount := rand.Intn(10) + 1
+		userCount := rand.Intn(MAX_COUNT) + 1
 		t.Logf("buy user count: %d", userCount)
 		//buy order
 		wg.Add(userCount)
 		for i := 0; i < userCount; i++ {
 			go func(count int) {
 				rand.Seed(time.Now().UnixNano())
-				orderCount := rand.Intn(10) + 1
+				orderCount := rand.Intn(MAX_COUNT) + 1
 				t.Logf("user %v buy order count: %d", count, orderCount)
 				for j := 0; j < orderCount; j++ {
 					rand.Seed(time.Now().UnixNano())
-					volume := rand.Intn(100) + 1
+					volume := rand.Intn(MAX_VOLUME) + 1
 					atomic.AddInt32(&orderId, 1)
 					newOrder := entity.Order{OrderID: strconv.Itoa(int(atomic.LoadInt32(&orderId))), UserID: strconv.Itoa(count), Item: "gold", Op: 0, Volume: volume, Price: price, MatchRule: "partial"}
-					t.Logf("user %v new buy order: %+v", count, newOrder)
+					// t.Logf("user %v new buy order: %+v", count, newOrder)
 					err := newOrder.Validate()
 					if err != nil {
 						return
 					}
 					atomic.AddInt32(&totalBuyVolume, int32(volume))
 					// totalBuyVolume += volume
-					result, err := partialMatcher.Match(newOrder)
-					t.Logf("result: %v, err: %v", result, err)
+					partialMatcher.Match(newOrder)
+					// result, err := partialMatcher.Match(newOrder)
+					// t.Logf("result: %v, err: %v", result, err)
 				}
 				wg.Done()
 			}(i + 1)
 		}
 		//sell order
 		rand.Seed(time.Now().UnixNano())
-		userCount = rand.Intn(10) + 1
+		userCount = rand.Intn(MAX_COUNT) + 1
 		t.Logf("sell user count: %d", userCount)
 		wg.Add(userCount)
 		for i := 0; i < userCount; i++ {
 			go func(count int) {
 				rand.Seed(time.Now().UnixNano())
-				orderCount := rand.Intn(10) + 1
+				orderCount := rand.Intn(MAX_COUNT) + 1
 				t.Logf("user %v sell order count: %d", count, orderCount)
 				for j := 0; j < orderCount; j++ {
 					rand.Seed(time.Now().UnixNano())
-					volume := rand.Intn(100) + 1
+					volume := rand.Intn(MAX_VOLUME) + 1
 					atomic.AddInt32(&orderId, 1)
 					newOrder := entity.Order{OrderID: strconv.Itoa(int(atomic.LoadInt32(&orderId))), UserID: strconv.Itoa(count), Item: "gold", Op: 1, Volume: volume, Price: price, MatchRule: "partial"}
-					t.Logf("user %v new sell order: %+v", count, newOrder)
+					// t.Logf("user %v new sell order: %+v", count, newOrder)
 					err := newOrder.Validate()
 					if err != nil {
 						return
 					}
 					atomic.AddInt32(&totalSellVolume, int32(volume))
 					// totalSellVolume += volume
-					result, err := partialMatcher.Match(newOrder)
-					t.Logf("result: %v, err: %v", result, err)
+					partialMatcher.Match(newOrder)
+					// result, err := partialMatcher.Match(newOrder)
+					// t.Logf("result: %v, err: %v", result, err)
 				}
 				wg.Done()
 			}(i + 1)
